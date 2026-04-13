@@ -1,0 +1,14 @@
+package com.example.userservice.repository;
+
+import com.example.userservice.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByUserName(String userName);
+
+    boolean existsByUserName(String userName);
+
+    // THÊM MỚI: Hàm kiểm tra trùng email
+    boolean existsByEmail(String email);
+}
