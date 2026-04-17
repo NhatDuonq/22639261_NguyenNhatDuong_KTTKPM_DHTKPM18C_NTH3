@@ -10,8 +10,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.kafka.core.KafkaTemplate;
-
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import com.example.userservice.config.RabbitMQConfig;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +21,8 @@ import java.util.Optional;
 import com.example.userservice.dto.UserEventDTO;
 
 @RestController
-@CrossOrigin(origins = "*") // Cho phép Frontend (ReactJS) ở máy khác gọi chéo qua LAN
+
+@RequestMapping("/api/users")
 public class UserController {
 
     @Autowired
@@ -31,14 +34,8 @@ public class UserController {
     @Autowired
     private JwtUtil jwtUtil;
 
-    // THÊM MỚI: Inject Kafka Template
-    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     @Autowired
-    private KafkaTemplate<String, Object> kafkaTemplate;
-
-    // Định nghĩa tên Topic (Kênh phát sóng)
-    private static final String TOPIC_USER_EVENTS = "user-events-topic";
-
+    private RabbitTemplate rabbitTemplate;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
@@ -62,11 +59,10 @@ public class UserController {
                 savedUser.getId(),
                 savedUser.getUserName(),
                 savedUser.getEmail(),
-                "USER_REGISTERED"
-        );
+                "USER_REGISTERED");
 
-        // Gửi message vào topic "user-events-topic"
-        kafkaTemplate.send(TOPIC_USER_EVENTS, event);
+        // Gửi message vào RabbitMQ
+        rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.ROUTING_KEY, event);
 
         return ResponseEntity.ok("Đăng ký thành công và đã publish event!");
     }
@@ -118,18 +114,49 @@ public class UserController {
         userRepository.deleteById(id);
         return ResponseEntity.ok("Đã xóa tài khoản thành công!");
     }
+
     // 5. THÊM MỚI: API Lấy thông tin 1 người dùng theo ID
     @GetMapping("/users/{id}")
-//    @PreAuthorize("hasRole('ADMIN')") // Chỉ Admin mới được xem, bạn có thể xóa dòng này nếu muốn ai cũng xem được
+    // @PreAuthorize("hasRole('ADMIN')") // Chỉ Admin mới được xem, bạn có thể xóa
+    // dòng này nếu muốn ai cũng xem được
     public ResponseEntity<?> getUserById(@PathVariable Long id) {
         Optional<User> userOptional = userRepository.findById(id);
 
         if (userOptional.isPresent()) {
-            // Trả về dữ liệu user nếu tìm thấy (Status 200)
             return ResponseEntity.ok(userOptional.get());
         } else {
-            // Báo lỗi nếu không tìm thấy (Status 404)
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không tìm thấy người dùng có ID: " + id);
         }
+    }
+
+    // 6. API /api/me (Lấy thông tin cá nhân của người đang đăng nhập)
+    @GetMapping("/me")
+    public ResponseEntity<?> getMyProfile() {
+        // Lấy thông tin xác thực từ context (được parse từ Token)
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        
+        // Theo JwtAuthenticationFilter, giá trị principal chính là username
+        String currentUserName = (String) authentication.getPrincipal();
+        
+        // Tìm user theo username
+        Optional<User> userOptional = userRepository.findByUserName(currentUserName);
+        
+        if (userOptional.isPresent()) {
+            return ResponseEntity.ok(userOptional.get());
+        }
+        
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không tìm thấy tài khoản!");
+    }
+
+    // 7. API Đăng xuất (Chủ yếu mang tính tượng trưng báo FE xóa token)
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout() {
+        // Trong hệ thống JWT Stateless (Không trạng thái), Server không lưu Session.
+        // Việc đăng xuất thực chất là client tự xóa chuỗi Token (LocalStorage/Cookie).
+        
+        // Đoạn code này nhằm xóa thông tin người dùng khỏi ngữ cảnh của Request hiện tại
+        SecurityContextHolder.clearContext();
+        
+        return ResponseEntity.ok("Đăng xuất thành công! Frontend vui lòng xóa Token.");
     }
 }
