@@ -1,5 +1,5 @@
 import api, { useMock } from './api';
-import { mockCart, mockProducts } from './mockData';
+import { mockCart, mockProducts, redisSim } from './mockData';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -20,6 +20,14 @@ export const cartService = {
       const pid = Number(productId);
       const product = mockProducts.find(p => p.id === pid);
       if (!product) throw new Error("Product not found");
+
+      const stockKey = `stock:${pid}`;
+      try {
+        // Cập nhật kho bằng hàm mô phỏng giãm Redis (tuyệt đối không quá kho)
+        await redisSim.decrby(stockKey, quantity);
+      } catch (error) {
+        throw new Error(error.message);
+      }
 
       const existingItem = mockCart.items.find(item => item.productId === pid);
       if (existingItem) {
@@ -46,9 +54,25 @@ export const cartService = {
       await delay(200);
       const pid = Number(productId);
       const existingItem = mockCart.items.find(item => item.productId === pid);
-      if (existingItem) {
-        existingItem.quantity = quantity;
+      
+      if (!existingItem) throw new Error("Item not in cart");
+
+      const diff = quantity - existingItem.quantity;
+      const stockKey = `stock:${pid}`;
+
+      try {
+        if (diff > 0) {
+          // Khách muốn thêm -> trừ kho
+          await redisSim.decrby(stockKey, diff);
+        } else if (diff < 0) {
+          // Khách giảm bớt -> cộng lại kho
+          await redisSim.incrby(stockKey, -diff);
+        }
+      } catch (error) {
+        throw new Error(error.message); // Quăng lỗi nếu không đủ số lượng
       }
+
+      existingItem.quantity = quantity;
       return { success: true, cart: { ...mockCart } };
     }
     const response = await api.put('/cart/update', { productId, quantity });
@@ -59,7 +83,13 @@ export const cartService = {
     if (useMock) {
       await delay(200);
       const pid = Number(productId);
-      mockCart.items = mockCart.items.filter(item => item.productId !== pid);
+      const existingItem = mockCart.items.find(item => item.productId === pid);
+      
+      if (existingItem) {
+        // Hoàn lại kho số lượng trong giỏ
+        await redisSim.incrby(`stock:${pid}`, existingItem.quantity);
+        mockCart.items = mockCart.items.filter(item => item.productId !== pid);
+      }
       return { success: true, cart: { ...mockCart } };
     }
     const response = await api.delete(`/cart/remove/${productId}`);

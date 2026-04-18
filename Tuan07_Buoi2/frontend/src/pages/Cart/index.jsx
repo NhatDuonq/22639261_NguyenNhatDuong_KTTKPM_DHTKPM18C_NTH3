@@ -41,6 +41,13 @@ const CartPage = () => {
       await cartService.updateQuantity(productId, newQty);
     } catch (err) {
       console.error(err);
+      const backendError = err.response?.data?.message || err.message;
+      alert(backendError || "Không thể cập nhật số lượng");
+      // Rollback UI update
+      setCart(prev => ({
+        ...prev,
+        items: prev.items.map(i => i.productId === productId ? { ...i, quantity: currentQty } : i)
+      }));
     }
   };
 

@@ -46,3 +46,44 @@ export let mockCart = {
 
 // Giả lập Redis Data cho Đơn hàng
 export let mockOrders = [];
+
+// ======= YÊU CẦU PU4: QUẢN LÝ KHO BẰNG REDIS STRING =======
+// Tuyệt đối không lưu JSON cho tồn kho.
+// Định dạng: "stock:{productId}" -> "100" (Chuỗi, nhưng là số nguyên)
+export const mockRedisStock = {
+  "stock:1": "15",
+  "stock:2": "5",
+  "stock:3": "50",
+  "stock:4": "20"
+};
+
+// Hàm giả lập các lệnh nguyên tử của Redis
+export const redisSim = {
+  get: async (key) => mockRedisStock[key] || null,
+  decrby: async (key, amount) => {
+    // Trong Redis thật, lệnh này nguyên tử. Ở Mock ta mô phỏng logic.
+    if (!mockRedisStock[key]) throw new Error("Key not found");
+    const current = parseInt(mockRedisStock[key], 10);
+    if (current < amount) throw new Error("Không đủ số lượng tồn kho!");
+    const newVal = current - amount;
+    mockRedisStock[key] = String(newVal);
+    // Cập nhật lại list products để UI getProducts () hiển thị đúng
+    const productId = Number(key.split(':')[1]);
+    const p = mockProducts.find(x => x.id === productId);
+    if (p) p.stock = newVal;
+
+    return newVal;
+  },
+  incrby: async (key, amount) => {
+    if (!mockRedisStock[key]) throw new Error("Key not found");
+    const current = parseInt(mockRedisStock[key], 10);
+    const newVal = current + amount;
+    mockRedisStock[key] = String(newVal);
+    // Cập nhật lại list products
+    const productId = Number(key.split(':')[1]);
+    const p = mockProducts.find(x => x.id === productId);
+    if (p) p.stock = newVal;
+
+    return newVal;
+  }
+};

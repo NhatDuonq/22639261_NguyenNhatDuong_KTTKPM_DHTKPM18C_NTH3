@@ -25,17 +25,16 @@ const ProductDetailPage = () => {
   }, [id]);
 
   const handleAddToCart = async () => {
-    // Tối ưu UI lạc quan (Optimistic Update): Hiện thông báo ngay.
-    setToastMsg('Đã thêm sản phẩm vào giỏ!');
     setAddingToCart(true);
-    setTimeout(() => setToastMsg(''), 2000); // Tắt sau 2s
-
     try {
       await cartService.addToCart(id, 1);
-      // Bạn có thể xử lý việc đồng bộ Global State giỏ hàng ở đây nếu cần
+      setToastMsg('Đã thêm sản phẩm vào giỏ!');
+      setTimeout(() => setToastMsg(''), 2000); 
     } catch (error) {
       console.error(error);
-      setToastMsg('Có lỗi xảy ra khi thêm vào giỏ.');
+      const backendError = error.response?.data?.message || error.message;
+      setToastMsg(backendError || 'Có lỗi xảy ra khi thêm vào giỏ.');
+      setTimeout(() => setToastMsg(''), 3000); 
     } finally {
       setAddingToCart(false);
     }
@@ -57,7 +56,7 @@ const ProductDetailPage = () => {
   return (
     <div className="container mx-auto p-4 max-w-5xl">
       {toastMsg && (
-        <div className="fixed top-20 right-4 bg-green-500 text-white px-6 py-3 rounded shadow-lg z-50 animate-bounce">
+        <div className={`fixed top-20 right-4 ${toastMsg.includes('lỗi') || toastMsg.includes('Không đủ') || toastMsg.includes('thấy') ? 'bg-red-500' : 'bg-green-500'} text-white px-6 py-3 rounded shadow-lg z-50 animate-bounce`}>
           {toastMsg}
         </div>
       )}
